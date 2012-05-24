@@ -20,12 +20,6 @@ Welcome to pywik the static webserver csv logfile analyzer.
    pip install numpy
    pip install -r deps.txt
    #+END_SRC
-
-   enrich your csvs:
-   #+BEGIN_SRC
-   python splitcsv.py access.csv http://www.example.org https://www.example.org http://www2.example.org https://www2.example.org
-   #+END_SRC
-   where the urls signal site-internal referers
 ** Web-server logformat
    #+BEGIN_SRC
    set your webserver (nginx) to use these as logformats:
@@ -45,3 +39,9 @@ Welcome to pywik the static webserver csv logfile analyzer.
     access_log /var/log/nginx/parltrack-access.csv csv-https;
    #+END_SRC
    respectively for https hosts
+** Running pywik
+   enrich your csvs:
+   #+BEGIN_SRC
+   python splitcsv.py access.csv http://www.example.org https://www.example.org http://www2.example.org https://www2.example.org
+   #+END_SRC
+   where the urls signal site-internal referers
