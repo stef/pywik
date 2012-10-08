@@ -32,14 +32,14 @@ Welcome to pywik the static webserver csv logfile analyzer.
     requisites for pages (e.g. .css, .js, etc files), each line is a
     regexp.
 ** Web-server logformat
-   #+BEGIN_SRC
    set your webserver (nginx) to use these as logformats:
-        log_format csv-http  '"$time_local";$connection;"$remote_addr";0;"$http_host";"$request";'
-                '$status;$request_length;$body_bytes_sent;$request_time;"$http_referer";"$remote_user";'
-                '"$http_user_agent";"$http_x_forwarded_for";$msec';
-        log_format csv-https '"$time_local";$connection;"$remote_addr";1;"$http_host";"$request";'
-                '$status;$request_length;$body_bytes_sent;$request_time;"$http_referer";"$remote_user";'
-                '"$http_user_agent";"$http_x_forwarded_for";$msec';
+   #+BEGIN_SRC
+   log_format csv-http  '"$time_local";$connection;"$remote_addr";0;"$http_host";"$request";'
+      '$status;$request_length;$body_bytes_sent;$request_time;"$http_referer";"$remote_user";'
+      '"$http_user_agent";"$http_x_forwarded_for";$msec';
+   log_format csv-https '"$time_local";$connection;"$remote_addr";1;"$http_host";"$request";'
+      '$status;$request_length;$body_bytes_sent;$request_time;"$http_referer";"$remote_user";'
+      '"$http_user_agent";"$http_x_forwarded_for";$msec';
    #+END_SRC
    and for your hosts use them for logging:
    #+BEGIN_SRC
@@ -53,5 +53,13 @@ Welcome to pywik the static webserver csv logfile analyzer.
 ** Running pywik
    #+BEGIN_SRC
    ./fetchlogs.sh myhost.net
-   ./pywik.py myhost <logs/access.csv | less
+   ./pywik.py month myhost <logs/access.csv | less
    #+END_SRC
+   if you find anything interesting, you can extract all logentries
+   matching certain fields:
+   #+BEGIN_SRC
+   ./getentries.py logs/access.csv myhost path 'cart.php?a=asdf&templatefile=../../../configuration.php'
+   #+END_SRC
+** Bugs
+   pywik is slow, due to resolving hostnames on each run, if you want to
+   speed it up, use a dnscache.
