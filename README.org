@@ -18,7 +18,9 @@ Welcome to pywik the static webserver csv logfile analyzer.
    touch data/myhost/ownhosts
    #+END_SRC
 ** Host specific files
-   pywik uses a few host specific files, which improve the output massively.
+   pywik uses a few host specific files, which improve the output
+   considerably. Create a directory under data with your hostname as the
+   name and populate the following files accordingly.
 *** ownhosts
     a list of hostnames that are considered part of your
     infrastructure. Any log entries with referers from other than
