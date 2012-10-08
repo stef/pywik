@@ -22,7 +22,6 @@ ipcache={}
 ownhosts=[]
 
 basepath=os.path.dirname(os.path.abspath(__file__))
-blocks = u' ▁▂▃▄▅▆▇██'
 
 def init():
     global geoipdb, torexits, agents, countries, ignorepaths, goodpaths, ignoremissing, ownhosts
@@ -160,7 +159,7 @@ for line in reader:
 
     date=todate(line['time_local'])
 
-    if not sys.argv[3] in line[sys.argv[2]]:
+    if not sys.argv[3].decode('utf8') in line[sys.argv[2]]:
         continue
 
     if line['remote_addr'] in torexits:
@@ -233,7 +232,7 @@ for line in reader:
     # domain name
     line['hostname']=gethost(line['remote_addr'])
 
-    print "%s  %s\t%s" % (countries[line['country']]['Common Name'], line['remote_addr'], line['hostname'])
+    print "%s  %s\t%s" % (countries.get(line['country'],{'Common Name': line['country']})['Common Name'], line['remote_addr'], line['hostname'])
     print date
     print line['http_user_agent'].encode('utf8')
     if line.get('search_query'):
