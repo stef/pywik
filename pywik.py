@@ -22,7 +22,6 @@ ipcache={}
 ownhosts=[]
 
 basepath=os.path.dirname(os.path.abspath(__file__))
-blocks = u' ▁▂▃▄▅▆▇██'
 
 def init():
     global geoipdb, torexits, agents, countries, ignorepaths, goodpaths, ignoremissing, ownhosts
@@ -80,6 +79,7 @@ def init_countrymap():
     return countrymap
 
 def spark(data):
+    blocks = u' ▁▂▃▄▅▆▇█'
     lo = float(min(data))
     hi = float(max(data))
     incr = (hi - lo)/(len(blocks)-1) or 1
@@ -159,6 +159,14 @@ def count(d, e, l):
     elems.append(l)
     d[e]=[cnt+1,elems]
 
+def printset(title,items):
+    print title
+    print u'\n'.join(items).encode('utf8')
+    print
+
+def cnt2lst(cnt):
+    return [u"%s\t%s" % (val[0], key) for key, val in sorted(cnt.items(),reverse=True, key=itemgetter(1))]
+
 headers = ["time_local","connection","remote_addr","https","http_host",
            "request","status","request_length","body_bytes_sent","request_time",
            "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
@@ -168,7 +176,6 @@ notoks={}
 notfounds={}
 unknowns={}
 bots={}
-wagents={}
 refs={}
 pages={}
 nations={}
@@ -316,9 +323,6 @@ for line in reader:
         tmp=' '.join([''.join(line['agent']), line['http_user_agent']])
         count(bots,tmp,line)
         continue
-    if line['agent']==['?']:
-        tmp=' '.join([''.join(line['agent']), line['http_user_agent']])
-        count(wagents,tmp,line)
 
     if line['extref'] and not line['search_query']:
         count(refs,line['http_referer'],line)
@@ -352,57 +356,30 @@ for line in reader:
 
         count(months,line['month'],line)
 
-print "errors"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(notoks.items(),reverse=True, key=itemgetter(1))])
-print
-
-print "unknowns"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(unknowns.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "bots"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(bots.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-#print "wagents"
-#print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(wagents.items(),reverse=True, key=itemgetter(1))])
-#print
-
-print "referers"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(refs.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "paths"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(pages.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "nations"
-print u'\n'.join([u"%s\t%s" % (val[0], countries[key]['Common Name'] if key else '-') for key, val in sorted(nations.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "searches"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(searches.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "from tor"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(fromtor.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "days"
-print spark([val[0] for key, val in sorted(days.items(),reverse=True)]).encode('utf8')
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(days.items(),reverse=True)]).encode('utf8')
-print
-
-print "Months"
-print spark([val[0] for key, val in sorted(months.items(),reverse=True)]).encode('utf8')
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(months.items(),reverse=True)]).encode('utf8')
-print
-
-print "not founds"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(notfounds.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "hosts"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(hosts.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
+printset("Errors",cnt2lst(notoks))
+printset("Unknown",cnt2lst(unknowns))
+printset("Bots",cnt2lst(bots))
+printset("Referers",cnt2lst(refs))
+printset("Pages",cnt2lst(pages))
+printset("Countries",[u"%s\t%s" % (val[0],
+                                   countries.get(key,
+                                                 {'Common Name': key})['Common Name'] if key else '-')
+                      for key, val
+                      in sorted(nations.items(),
+                                reverse=True,
+                                key=itemgetter(1))])
+printset("Searches",cnt2lst(searches))
+printset("From TOR",cnt2lst(fromtor))
+print spark([val[0]
+             for key, val
+             in sorted(days.items(),
+                       reverse=True)]).encode('utf8')
+printset("Days",cnt2lst(days))
+print spark([val[0]
+             for key, val
+             in sorted(months.items(),
+                       reverse=True)]).encode('utf8')
+printset("Months",cnt2lst(months))
+printset("Not founds",cnt2lst(notfounds))
+printset("Hosts",cnt2lst(hosts))
 
