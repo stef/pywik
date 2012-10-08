@@ -1,6 +1,3 @@
 pygeoip
 dateutil
 pbs
-pandas
-matplotplib
-numpy

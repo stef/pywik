@@ -79,31 +79,6 @@ def init_countrymap():
     csvfile.close()
     return countrymap
 
-def spark(data):
-    lo = float(min(data))
-    hi = float(max(data))
-    incr = (hi - lo)/(len(blocks)-1) or 1
-    return ''.join([(blocks[int((float(n) - lo)/incr)]
-                     if n else
-                     ' ')
-                    for n in data])
-
-class GMT1(datetime.tzinfo):
-    def __init__(self):         # DST starts last Sunday in March
-        d = datetime.datetime(2012, 4, 1)   # ends last Sunday in October
-        self.dston = d - datetime.timedelta(days=d.weekday() + 1)
-        d = datetime.datetime(2012, 11, 1)
-        self.dstoff = d - datetime.timedelta(days=d.weekday() + 1)
-    def utcoffset(self, dt):
-        return datetime.timedelta(hours=1) + self.dst(dt)
-    def dst(self, dt):
-        if self.dston <=  dt.replace(tzinfo=None) < self.dstoff:
-            return datetime.timedelta(hours=1)
-        else:
-            return datetime.timedelta(0)
-    def tzname(self,dt):
-         return "GMT +1"
-
 def uunquote(txt):
     try:
         return unquote(txt.encode('ascii')).decode('utf8')
@@ -163,44 +138,7 @@ headers = ["time_local","connection","remote_addr","https","http_host",
            "request","status","request_length","body_bytes_sent","request_time",
            "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
            "request_type", "path", "http_version", "ispage", "isbot",
-           "hostname", "extref","search_query","country","year","month","day"]
-notoks={}
-notfounds={}
-unknowns={}
-bots={}
-wagents={}
-refs={}
-pages={}
-nations={}
-hosts={}
-days={}
-months={}
-searches={}
-fromtor={}
-
-now=datetime.datetime.now(GMT1())
-span=None
-if len(sys.argv)>2:
-    if sys.argv[1]=="today":
-        span = now - datetime.timedelta(days=1)
-        del sys.argv[1]
-    elif sys.argv[1]=="yesterday":
-        span = now - datetime.timedelta(days=2)
-        del sys.argv[1]
-    elif sys.argv[1]=="recently":
-        span = now - datetime.timedelta(days=3)
-        del sys.argv[1]
-    elif sys.argv[1]=="week":
-        span = now - datetime.timedelta(days=7)
-        del sys.argv[1]
-    elif sys.argv[1]=="month":
-        span = now - datetime.timedelta(days=30)
-        del sys.argv[1]
-    elif sys.argv[1]=="quarter":
-        span = now - datetime.timedelta(days=121)
-        del sys.argv[1]
-if not span:
-    span = now - datetime.timedelta(days=1)
+           "hostname", "extref","search_query","country","year","month","day", "viator"]
 
 init()
 
@@ -212,46 +150,24 @@ csv.register_dialect('nginx',
                         'quotechar': '"',
                         'doublequote': False})
 reader = UnicodeDictReader(sys.stdin, fieldnames=headers, dialect='nginx')
-# skip headers
 reader.next()
 
-print "Starting from", span
-
 for line in reader:
-    # skip 1st line, 304 and anything outside timespan
-    if (line['status'] in ['304'] or
-        line['time_local']=="time_local"): continue
-    date=todate(line['time_local'])
-    if date<span: continue
-
     # request_type, path, http_version
     (line['request_type'],
      line['path'],
      line['http_version'])=explodereq(line['request'])
 
-    # skip all requests to robots.txt
-    if line['path']=='/robots.txt': continue
+    date=todate(line['time_local'])
+
+    if not sys.argv[3] in line[sys.argv[2]]:
+        continue
 
     if line['remote_addr'] in torexits:
-        tmp=' '.join([line['path'].decode('utf8'),
-                      line['status'],
-                      line['http_referer'],
-                      line['http_user_agent']
-                      ])
-        count(fromtor,tmp,line)
-        continue
-
-    # not ok?
-    if ('200'>line['status'] or
-        line['status']>='400' and
-        line['status']!='404'):
-        count(notoks,' '.join([line['status'], line['request']]),line)
-        continue
+        line['viator']=True
 
     # extract query strings if any
     line['search_query']=get_query(line['http_referer'])
-    if line['search_query']:
-        count(searches,line['search_query'],line)
 
     # Referer
     # unquote http_referer
@@ -286,20 +202,10 @@ for line in reader:
         line['http_referer']=tmp
     # extref?
     line['extref']=not textfilterre(line['http_referer'],
-                                patterns=ownhosts)
+                                    patterns=ownhosts)
 
     # is page?
     line['ispage']=textfilterre(line['path'], patterns=goodpaths)
-    if line['status']=='404':
-        if not textfilterre(line['path'],ignoremissing):
-            count(notfounds,line['path'],line)
-        continue
-    if not line['ispage'] and not textfilterre(line['path'],ignorepaths):
-        count(unknowns,line['path'],line)
-        continue
-
-    # domain name
-    line['hostname']=gethost(line['remote_addr'])
 
     # append Country
     if not line['country']: line['country']=get_country(line['remote_addr'])
@@ -312,16 +218,6 @@ for line in reader:
     # R = Robot, crawler, spider
     # S = Spam or bad bot
     line['agent']=agents.get(line['http_user_agent'],['?'])
-    if set(line['agent']).intersection(['S', 'P', 'R', 'C']):
-        tmp=' '.join([''.join(line['agent']), line['http_user_agent']])
-        count(bots,tmp,line)
-        continue
-    if line['agent']==['?']:
-        tmp=' '.join([''.join(line['agent']), line['http_user_agent']])
-        count(wagents,tmp,line)
-
-    if line['extref'] and not line['search_query']:
-        count(refs,line['http_referer'],line)
 
     line['msec']=float(line['msec'])
     line['request_time']=float(line['request_time'])
@@ -334,75 +230,15 @@ for line in reader:
     line['https']=True if line['https']=='1' else False
     line['status']=int(line['status'])
 
-    # count pages, hosts, days and months for pages
-    if not line['isbot'] and line['ispage']:
-        count(pages,line['path'],line)
+    # domain name
+    line['hostname']=gethost(line['remote_addr'])
 
-        cnt, elems=nations.get(line['country'],[0,[]])
-        elems.append(line)
-        nations[line['country']]=[cnt+1,elems]
-
-        tmp=' '.join([line['country'],
-                      line['hostname'] or line['remote_addr'],
-                      line['http_user_agent']
-                      ])
-        count(hosts,tmp,line)
-
-        count(days,line['day'],line)
-
-        count(months,line['month'],line)
-
-print "errors"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(notoks.items(),reverse=True, key=itemgetter(1))])
-print
-
-print "unknowns"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(unknowns.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "bots"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(bots.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-#print "wagents"
-#print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(wagents.items(),reverse=True, key=itemgetter(1))])
-#print
-
-print "referers"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(refs.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "paths"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(pages.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "nations"
-print u'\n'.join([u"%s\t%s" % (val[0], countries[key]['Common Name'] if key else '-') for key, val in sorted(nations.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "searches"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(searches.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "from tor"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(fromtor.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "days"
-print spark([val[0] for key, val in sorted(days.items(),reverse=True)]).encode('utf8')
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(days.items(),reverse=True)]).encode('utf8')
-print
-
-print "Months"
-print spark([val[0] for key, val in sorted(months.items(),reverse=True)]).encode('utf8')
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(months.items(),reverse=True)]).encode('utf8')
-print
-
-print "not founds"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(notfounds.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
-
-print "hosts"
-print u'\n'.join([u"%s\t%s" % (val[0], key) for key, val in sorted(hosts.items(),reverse=True, key=itemgetter(1))]).encode('utf8')
-print
+    print "%s  %s\t%s" % (countries[line['country']]['Common Name'], line['remote_addr'], line['hostname'])
+    print date
+    print line['http_user_agent'].encode('utf8')
+    if line.get('search_query'):
+        print line['search_query'].encode('utf8')
+    print line['http_referer'].encode('utf8')
+    print line['path'].encode('utf8')
+    print
 

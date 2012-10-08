@@ -1,25 +1,36 @@
 * pywik
 Welcome to pywik the static webserver csv logfile analyzer.
-** What you get
- - big csv-s split into monthly chunks
- - the date is converted to ISO format
- - the request is split into request_type, path and http_version fields
- - ispage indicating if the path is a page or a requisite element like .js or .css files.
- - isbot indicates if the useragent belongs to a crawler
- - hostname of remote_addr
- - unquoted referer
- - extref indicates if a referer is from an external page
- - search query from bing and google
- - country code from maxmind geoip
 ** Setup
-   download & unzip into your pywik folder:
-   http://geolite.maxmind.com/download/geoip/database/GeoLiteCountry/GeoIP.dat.gz
-
    install the dependencies:
    #+BEGIN_SRC
-   pip install numpy
+   virtualenv --no-site-packages env
+   source env/bin/activate
    pip install -r deps.txt
    #+END_SRC
+   setup environment for pywik:
+   #+BEGIN_SRC
+   mkdir logs
+   ./updatelists.sh
+   mkdir data/myhost
+   touch data/myhost/goodpaths
+   touch data/myhost/ignoremissing
+   touch data/myhost/ignorepaths
+   touch data/myhost/ownhosts
+   #+END_SRC
+** Host specific files
+   pywik uses a few host specific files, which improve the output massively.
+*** ownhosts
+    a list of hostnames that are considered part of your
+    infrastructure. Any log entries with referers from other than
+    these hosts are considered external hits.
+*** goodpath
+    Any path considered a page visit, each line is a regexp.
+*** ignoremissing
+    Any path that is regularly generating 404 responses, each line is a regexp.
+*** ignorepaths
+    Any path that is uninteresting for tracking pageviews, like all
+    requisites for pages (e.g. .css, .js, etc files), each line is a
+    regexp.
 ** Web-server logformat
    #+BEGIN_SRC
    set your webserver (nginx) to use these as logformats:
@@ -32,16 +43,15 @@ Welcome to pywik the static webserver csv logfile analyzer.
    #+END_SRC
    and for your hosts use them for logging:
    #+BEGIN_SRC
-    access_log /var/log/nginx/parltrack-access.csv csv-http;
+    access_log /var/log/nginx/access.csv csv-http;
    #+END_SRC
    or
    #+BEGIN_SRC
-    access_log /var/log/nginx/parltrack-access.csv csv-https;
+    access_log /var/log/nginx/access.csv csv-https;
    #+END_SRC
-   respectively for https hosts
+   respectively for https hosts stanzas.
 ** Running pywik
-   enrich your csvs:
    #+BEGIN_SRC
-   python splitcsv.py access.csv http://www.example.org https://www.example.org http://www2.example.org https://www2.example.org
+   ./fetchlogs.sh myhost.net
+   ./pywik.py myhost <logs/access.csv | less
    #+END_SRC
-   where the urls signal site-internal referers
