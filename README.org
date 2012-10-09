@@ -16,6 +16,7 @@ Welcome to pywik the static webserver csv logfile analyzer.
    touch data/myhost/ignoremissing
    touch data/myhost/ignorepaths
    touch data/myhost/ownhosts
+   touch data/myhost/classes
    #+END_SRC
 ** Host specific files
    pywik uses a few host specific files, which improve the output
@@ -33,6 +34,26 @@ Welcome to pywik the static webserver csv logfile analyzer.
     Any path that is uninteresting for tracking pageviews, like all
     requisites for pages (e.g. .css, .js, etc files), each line is a
     regexp.
+*** classes
+    This file allows you to categorise the entries. The format is the
+    following: Each class starts with its name, then pairwise
+    fieldnames and regexps. Classes are separated with empty lines.
+   #+BEGIN_SRC
+    Users
+    path
+    /user/\?id=
+
+    Indexed Products
+    path
+    /products/\?id=
+    http_user_agent
+    .*Googlebot/2\.1
+   #+END_SRC
+    The above example defines two new classes:
+    - Users are any entries that start with the path "/user/?id="
+    - indexed products, certain paths starting with "/products..." and
+      are hit by googlebot - notice the double rule one for the path,
+      the other for the user agent
 ** Web-server logformat
    set your webserver (nginx) to use these as logformats:
    #+BEGIN_SRC
@@ -52,6 +73,11 @@ Welcome to pywik the static webserver csv logfile analyzer.
     access_log /var/log/nginx/access.csv csv-https;
    #+END_SRC
    respectively for https hosts stanzas.
+   For Apache the following should work:
+   #+BEGIN_SRC
+   LogFormat "%{%Y-%m-%dT%H:%M:%S%z}t;x;%h;0;%v;%R;%s;%I;%O;%D;%{Referer}i;%u;%{User-agent}i;%{X-Forwarded-For}i;x" csv-http
+   LogFormat "%{%Y-%m-%dT%H:%M:%S%z}t;x;%h;1;%v;%R;%s;%I;%O;%D;%{Referer}i;%u;%{User-agent}i;%{X-Forwarded-For}i;x" csv-https
+   #+END_SRC
 ** Running pywik
    #+BEGIN_SRC
    ./fetchlogs.sh myhost.net
