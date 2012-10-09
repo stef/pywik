@@ -18,15 +18,25 @@ countries=None
 ignorepaths=None
 goodpaths=None
 ignoremissing=None
+tagfilters=None
 ipcache={}
 ownhosts=[]
+headers = ["time_local","connection","remote_addr","https","http_host",
+           "request","status","request_length","body_bytes_sent","request_time",
+           "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
+           # below are computed fields
+           "request_type", "path", "http_version", "ispage", "isbot",
+           "hostname", "extref","search_query","country","year","month","day"]
 
 basepath=os.path.dirname(os.path.abspath(__file__))
 
 def init():
-    global geoipdb, torexits, agents, countries, ignorepaths, goodpaths, ignoremissing, ownhosts
+    global geoipdb, torexits, agents, countries, \
+           ignorepaths, goodpaths, ignoremissing, \
+           ownhosts, tagfilters
     # Load the database once and store it globally in interpreter memory.
-    geoipdb = GeoIP.open('%s/data/GeoIP.dat' % basepath,GeoIP.GEOIP_STANDARD)
+    geoipdb = GeoIP.open('%s/data/GeoIP.dat' %
+                         basepath,GeoIP.GEOIP_STANDARD)
 
     fp=open('%s/data/torexits.csv' % basepath,'r')
     torexits=[x.strip() for x in fp]
@@ -41,7 +51,17 @@ def init():
         agents[text]=type.split()
     fp.close()
 
-    countries=init_countrymap()
+    csvfile = open('%s/data/countrylist.csv' % basepath,'r')
+    dialect = csv.Sniffer().sniff(csvfile.read(32768))
+    csvfile.seek(0)
+    headers = csv.reader(csvfile, dialect=dialect).next()
+    reader = UnicodeDictReader(csvfile,
+                               fieldnames=headers,
+                               dialect=dialect)
+    countries={}
+    for line in reader:
+        countries[line['ISO 3166-1 2 Letter Code']]=line
+    csvfile.close()
 
     fp=open('%s/data/%s/ignorepaths' % (basepath, sys.argv[1]),'r')
     ignorepaths=[re.compile(x.strip()) for x in fp]
@@ -59,24 +79,38 @@ def init():
     ownhosts=[re.compile("%s://%s/" % (scheme, host.strip())) for host in fp for scheme in ['http','https']]
     fp.close()
 
+    tagfilters=init_tags()
+
+def init_tags():
+    fp=open('%s/data/%s/classes' % (basepath, sys.argv[1]),'r')
+    tags={}
+    try:
+        while True:
+            tag=fp.next().strip()
+            if not tag: continue
+            patterns=[]
+            tags[tag]=patterns
+            while True:
+                field=fp.next().strip()
+                if not field: break
+                if not field in headers:
+                    # skip to the next definition
+                    while True:
+                        tmp=fp.next()
+                        if not tmp.strip(): break
+                else:
+                    pattern=fp.next()[:-1] # stripping trailing \n
+                    if pattern:
+                        patterns.append((field,re.compile(pattern)))
+    except StopIteration:
+        pass
+    fp.close()
+    return tags
+
 def UnicodeDictReader(utf8_data, **kwargs):
     csv_reader = csv.DictReader(utf8_data, **kwargs)
     for row in csv_reader:
         yield dict([(key, unicode(value or "", "utf8")) for key, value in row.iteritems()])
-
-def init_countrymap():
-    csvfile = open('%s/data/countrylist.csv' % basepath,'r')
-    dialect = csv.Sniffer().sniff(csvfile.read(32768))
-    csvfile.seek(0)
-    headers = csv.reader(csvfile, dialect=dialect).next()
-    reader = UnicodeDictReader(csvfile,
-                               fieldnames=headers,
-                               dialect=dialect)
-    countrymap={}
-    for line in reader:
-        countrymap[line['ISO 3166-1 2 Letter Code']]=line
-    csvfile.close()
-    return countrymap
 
 def spark(data):
     blocks = u' ▁▂▃▄▅▆▇█'
@@ -167,219 +201,231 @@ def printset(title,items):
 def cnt2lst(cnt):
     return [u"%s\t%s" % (val[0], key) for key, val in sorted(cnt.items(),reverse=True, key=itemgetter(1))]
 
-headers = ["time_local","connection","remote_addr","https","http_host",
-           "request","status","request_length","body_bytes_sent","request_time",
-           "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
-           "request_type", "path", "http_version", "ispage", "isbot",
-           "hostname", "extref","search_query","country","year","month","day"]
-notoks={}
-notfounds={}
-unknowns={}
-bots={}
-refs={}
-pages={}
-nations={}
-hosts={}
-days={}
-months={}
-searches={}
-fromtor={}
+def process():
+    notoks={}
+    notfounds={}
+    unknowns={}
+    bots={}
+    refs={}
+    pages={}
+    nations={}
+    hosts={}
+    days={}
+    months={}
+    searches={}
+    fromtor={}
+    tagged={}
 
-now=datetime.datetime.now(GMT1())
-span=None
-if len(sys.argv)>2:
-    if sys.argv[1]=="today":
+    now=datetime.datetime.now(GMT1())
+    span=None
+    if len(sys.argv)>2:
+        if sys.argv[1]=="today":
+            span = now - datetime.timedelta(days=1)
+            del sys.argv[1]
+        elif sys.argv[1]=="yesterday":
+            span = now - datetime.timedelta(days=2)
+            del sys.argv[1]
+        elif sys.argv[1]=="recently":
+            span = now - datetime.timedelta(days=3)
+            del sys.argv[1]
+        elif sys.argv[1]=="week":
+            span = now - datetime.timedelta(days=7)
+            del sys.argv[1]
+        elif sys.argv[1]=="month":
+            span = now - datetime.timedelta(days=30)
+            del sys.argv[1]
+        elif sys.argv[1]=="quarter":
+            span = now - datetime.timedelta(days=121)
+            del sys.argv[1]
+    if not span:
         span = now - datetime.timedelta(days=1)
-        del sys.argv[1]
-    elif sys.argv[1]=="yesterday":
-        span = now - datetime.timedelta(days=2)
-        del sys.argv[1]
-    elif sys.argv[1]=="recently":
-        span = now - datetime.timedelta(days=3)
-        del sys.argv[1]
-    elif sys.argv[1]=="week":
-        span = now - datetime.timedelta(days=7)
-        del sys.argv[1]
-    elif sys.argv[1]=="month":
-        span = now - datetime.timedelta(days=30)
-        del sys.argv[1]
-    elif sys.argv[1]=="quarter":
-        span = now - datetime.timedelta(days=121)
-        del sys.argv[1]
-if not span:
-    span = now - datetime.timedelta(days=1)
 
-init()
+    init()
 
-csv.register_dialect('nginx',
-                     **{'lineterminator': '\r\n',
-                        'skipinitialspace': False,
-                        'quoting': 0,
-                        'delimiter': ';',
-                        'quotechar': '"',
-                        'doublequote': False})
-reader = UnicodeDictReader(sys.stdin, fieldnames=headers, dialect='nginx')
-# skip headers
-reader.next()
+    csv.register_dialect('nginx',
+                         **{'lineterminator': '\r\n',
+                            'skipinitialspace': False,
+                            'quoting': 0,
+                            'delimiter': ';',
+                            'quotechar': '"',
+                            'doublequote': False})
+    reader = UnicodeDictReader(sys.stdin, fieldnames=headers, dialect='nginx')
+    # skip headers
+    reader.next()
 
-print "Starting from", span
+    print "Starting from", span
 
-for line in reader:
-    # skip 1st line, 304 and anything outside timespan
-    if (line['status'] in ['304'] or
-        line['time_local']=="time_local"): continue
-    date=todate(line['time_local'])
-    if date<span: continue
+    for line in reader:
+        # skip 1st line, 304 and anything outside timespan
+        if (line['status'] in ['304'] or
+            line['time_local']=="time_local"): continue
+        date=todate(line['time_local'])
+        if date<span: continue
 
-    # request_type, path, http_version
-    (line['request_type'],
-     line['path'],
-     line['http_version'])=explodereq(line['request'])
+        # request_type, path, http_version
+        (line['request_type'],
+         line['path'],
+         line['http_version'])=explodereq(line['request'])
 
-    # skip all requests to robots.txt
-    if line['path']=='/robots.txt': continue
+        # skip all requests to robots.txt
+        if line['path']=='/robots.txt': continue
 
-    if line['remote_addr'] in torexits:
-        tmp=' '.join([line['path'].decode('utf8'),
-                      line['status'],
-                      line['http_referer'],
-                      line['http_user_agent']
-                      ])
-        count(fromtor,tmp,line)
-        continue
+        if line['remote_addr'] in torexits:
+            tmp=' '.join([line['path'].decode('utf8'),
+                          line['status'],
+                          line['http_referer'],
+                          line['http_user_agent']
+                          ])
+            count(fromtor,tmp,line)
+            continue
 
-    # not ok?
-    if ('200'>line['status'] or
-        line['status']>='400' and
-        line['status']!='404'):
-        count(notoks,' '.join([line['status'], line['request']]),line)
-        continue
+        # not ok?
+        if ('200'>line['status'] or
+            line['status']>='400' and
+            line['status']!='404'):
+            count(notoks,' '.join([line['status'], line['request']]),line)
+            continue
 
-    # extract query strings if any
-    line['search_query']=get_query(line['http_referer'])
-    if line['search_query']:
-        count(searches,line['search_query'],line)
+        # extract query strings if any
+        line['search_query']=get_query(line['http_referer'])
+        if line['search_query']:
+            count(searches,line['search_query'],line)
 
-    # Referer
-    # unquote http_referer
-    tmp=unquote(line['http_referer'])
-    # simplify referers
-    urlobj=urlparse(tmp)
-    if (tmp.startswith('http://www.facebook.com/l.php?u=') or
-        tmp.startswith('http://m.facebook.com/l.php?u=')):
-        line['http_referer']='http://www.facebook.com/'
-    elif urlobj.netloc.startswith('www.google.') and urlobj.path=="/imgres":
-        query=parse_qs(urlobj.query)
-        line['image']=query.get('imgurl',[''])[0]
-        line['imageref']=query.get('imgrefurl',[''])[0]
-        line['http_referer']='%s://%s/imgres?imgurl=%s' % (urlobj.scheme,
-                                                           urlobj.netloc,
-                                                           line['image'])
-    elif urlobj.netloc.startswith('www.google.') and urlobj.path=="/url":
-        query=parse_qs(urlobj.query)
-        line['http_referer']='%s://%s/url=%s' % (urlobj.scheme,
-                                                 urlobj.netloc,
-                                                 uunquote(query.get('url',[''])[0]))
-    elif urlobj.netloc.startswith('webcache.googleusercontent.') and urlobj.path=="/search":
-        query=parse_qs(urlobj.query)
+        # Referer
+        # unquote http_referer
         try:
-            u=uunquote(query.get('q',[':'])[0]).split(':',1)[1].decode('utf8')
+            tmp=uunquote(line['http_referer']).decode('utf8')
         except:
-            u=uunquote(query.get('q',[':'])[0]).split(':',1)[1]
-        line['http_referer']='%s://%s/url=%s' % (urlobj.scheme,
-                                                 urlobj.netloc,
-                                                 u)
-    else:
-        line['http_referer']=tmp
-    # extref?
-    line['extref']=not textfilterre(line['http_referer'],
-                                patterns=ownhosts)
+            tmp=uunquote(line['http_referer'])
+        # simplify referers
+        urlobj=urlparse(tmp)
+        if (tmp.startswith('http://www.facebook.com/l.php?u=') or
+            tmp.startswith('http://m.facebook.com/l.php?u=')):
+            line['http_referer']='http://www.facebook.com/'
+        elif urlobj.netloc.startswith('www.google.') and urlobj.path=="/imgres":
+            query=parse_qs(urlobj.query)
+            line['image']=query.get('imgurl',[''])[0]
+            line['imageref']=query.get('imgrefurl',[''])[0]
+            line['http_referer']='%s://%s/imgres?imgurl=%s' % (urlobj.scheme,
+                                                               urlobj.netloc,
+                                                               line['image'])
+        elif urlobj.netloc.startswith('www.google.') and urlobj.path=="/url":
+            query=parse_qs(urlobj.query)
+            line['http_referer']='%s://%s/url=%s' % (urlobj.scheme,
+                                                     urlobj.netloc,
+                                                     uunquote(query.get('url',[''])[0]))
+        elif urlobj.netloc.startswith('webcache.googleusercontent.') and urlobj.path=="/search":
+            query=parse_qs(urlobj.query)
+            try:
+                u=uunquote(query.get('q',[':'])[0]).split(':',1)[1].decode('utf8')
+            except:
+                u=uunquote(query.get('q',[':'])[0]).split(':',1)[1]
+            line['http_referer']='%s://%s/url=%s' % (urlobj.scheme,
+                                                     urlobj.netloc,
+                                                     u)
+        else:
+            line['http_referer']=tmp
+        # extref?
+        line['extref']=not textfilterre(line['http_referer'],
+                                    patterns=ownhosts)
 
-    # is page?
-    line['ispage']=textfilterre(line['path'], patterns=goodpaths)
-    if line['status']=='404':
-        if not textfilterre(line['path'],ignoremissing):
-            count(notfounds,line['path'],line)
-        continue
-    if not line['ispage'] and not textfilterre(line['path'],ignorepaths):
-        count(unknowns,line['path'],line)
-        continue
+        # is page?
+        line['ispage']=textfilterre(line['path'], patterns=goodpaths)
+        if line['status']=='404':
+            if not textfilterre(line['path'],ignoremissing):
+                count(notfounds,line['path'],line)
+            continue
+        if not line['ispage'] and not textfilterre(line['path'],ignorepaths):
+            count(unknowns,line['path'],line)
+            continue
 
-    # domain name
-    line['hostname']=gethost(line['remote_addr'])
+        # domain name
+        line['hostname']=gethost(line['remote_addr'])
 
-    # append Country
-    if not line['country']: line['country']=get_country(line['remote_addr'])
+        # append Country
+        if not line['country']: line['country']=get_country(line['remote_addr'])
 
-    # isbot?
-    # B = Browser
-    # C = Link-, bookmark-, server- checking
-    # D = Downloading tool
-    # P = Proxy server, web filtering
-    # R = Robot, crawler, spider
-    # S = Spam or bad bot
-    line['agent']=agents.get(line['http_user_agent'],['?'])
-    if set(line['agent']).intersection(['S', 'P', 'R', 'C']):
-        tmp=' '.join([''.join(line['agent']), line['http_user_agent']])
-        count(bots,tmp,line)
-        continue
+        # isbot?
+        # B = Browser
+        # C = Link-, bookmark-, server- checking
+        # D = Downloading tool
+        # P = Proxy server, web filtering
+        # R = Robot, crawler, spider
+        # S = Spam or bad bot
+        line['agent']=agents.get(line['http_user_agent'],['?'])
+        if set(line['agent']).intersection(['S', 'P', 'R', 'C']):
+            tmp=' '.join([''.join(line['agent']), line['http_user_agent']])
+            count(bots,tmp,line)
+            continue
 
-    if line['extref'] and not line['search_query']:
-        count(refs,line['http_referer'],line)
+        if line['extref'] and not line['search_query']:
+            count(refs,line['http_referer'],line)
 
-    line['msec']=float(line['msec'])
-    line['request_time']=float(line['request_time'])
-    line['connection']=int(line['connection'])
-    line['body_bytes_sent']=int(line['body_bytes_sent'])
-    line['request_length']=int(line['request_length'])
-    line['year']=date.year
-    line['month']=date.month
-    line['day']=date.day
-    line['https']=True if line['https']=='1' else False
-    line['status']=int(line['status'])
+        line['msec']=float(line['msec'])
+        line['request_time']=float(line['request_time'])
+        line['connection']=int(line['connection'])
+        line['body_bytes_sent']=int(line['body_bytes_sent'])
+        line['request_length']=int(line['request_length'])
+        line['year']=date.year
+        line['month']=date.month
+        line['day']=date.day
+        line['https']=True if line['https']=='1' else False
+        line['status']=int(line['status'])
 
-    # count pages, hosts, days and months for pages
-    if not line['isbot'] and line['ispage']:
-        count(pages,line['path'],line)
+        inclass=False
+        for tag, patterns in tagfilters.items():
+            for key, pattern in patterns:
+                if textfilterre(line[key], patterns=[pattern]):
+                    if not tag in tagged:
+                        tagged[tag]={}
+                    count(tagged[tag],line[key],line)
+                    inclass=True
 
-        cnt, elems=nations.get(line['country'],[0,[]])
-        elems.append(line)
-        nations[line['country']]=[cnt+1,elems]
+        # count pages, hosts, days and months for pages
+        if not line['isbot'] and line['ispage']:
+            if not inclass: count(pages,line['path'],line)
 
-        tmp=' '.join([line['country'],
-                      line['hostname'] or line['remote_addr'],
-                      line['http_user_agent']
-                      ])
-        count(hosts,tmp,line)
+            cnt, elems=nations.get(line['country'],[0,[]])
+            elems.append(line)
+            nations[line['country']]=[cnt+1,elems]
 
-        count(days,line['day'],line)
+            tmp=' '.join([line['country'],
+                          line['hostname'] or line['remote_addr'],
+                          line['http_user_agent']
+                          ])
+            count(hosts,tmp,line)
 
-        count(months,line['month'],line)
+            count(days,line['day'],line)
 
-printset("Errors",cnt2lst(notoks))
-printset("Unknown",cnt2lst(unknowns))
-printset("Bots",cnt2lst(bots))
-printset("Referers",cnt2lst(refs))
-printset("Pages",cnt2lst(pages))
-printset("Countries",[u"%s\t%s" % (val[0],
-                                   countries.get(key,
-                                                 {'Common Name': key})['Common Name'] if key else '-')
-                      for key, val
-                      in sorted(nations.items(),
-                                reverse=True,
-                                key=itemgetter(1))])
-printset("Searches",cnt2lst(searches))
-printset("From TOR",cnt2lst(fromtor))
-print spark([val[0]
-             for key, val
-             in sorted(days.items(),
-                       reverse=True)]).encode('utf8')
-printset("Days",cnt2lst(days))
-print spark([val[0]
-             for key, val
-             in sorted(months.items(),
-                       reverse=True)]).encode('utf8')
-printset("Months",cnt2lst(months))
-printset("Not founds",cnt2lst(notfounds))
-printset("Hosts",cnt2lst(hosts))
+            count(months,line['month'],line)
 
+    printset("Errors",cnt2lst(notoks))
+    printset("Unknown",cnt2lst(unknowns))
+    printset("Bots",cnt2lst(bots))
+    printset("Referers",cnt2lst(refs))
+    for tag, cnt in tagged.items():
+        printset(tag,cnt2lst(cnt))
+    printset("Pages",cnt2lst(pages))
+    printset("Countries",[u"%s\t%s" % (val[0],
+                                       countries.get(key,
+                                                     {'Common Name': key})['Common Name'] if key else '-')
+                          for key, val
+                          in sorted(nations.items(),
+                                    reverse=True,
+                                    key=itemgetter(1))])
+    printset("Searches",cnt2lst(searches))
+    printset("From TOR",cnt2lst(fromtor))
+    print spark([val[0]
+                 for key, val
+                 in sorted(days.items(),
+                           reverse=True)]).encode('utf8')
+    printset("Days",cnt2lst(days))
+    print spark([val[0]
+                 for key, val
+                 in sorted(months.items(),
+                           reverse=True)]).encode('utf8')
+    printset("Months",cnt2lst(months))
+    printset("Not founds",cnt2lst(notfounds))
+    printset("Hosts",cnt2lst(hosts))
+
+process()
