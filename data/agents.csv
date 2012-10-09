@@ -2528,3 +2528,5 @@ R,TosCrawler/Nutch-1.4 (http://www.toshiba.co.jp/rdc/about/crawl_info.htm; 'Rdc-
 R,Mozilla/5.0 (compatible; Seznam screenshot-generator 2.0; +http://fulltext.sblog.cz/screenshot/)
 R,Mozilla/5.0 (compatible; Exabot/3.0; +http://www.exabot.com/go/robot)
 R,Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/534+ (KHTML, like Gecko) BingPreview/1.0b
+R,Mozilla/5.0 (compatible; YodaoBot/1.0; http://www.yodao.com/help/webmaster/spider/; )
+C,Mozilla/5.0 (compatible; NetcraftSurveyAgent/1.0; +info@netcraft.com)
