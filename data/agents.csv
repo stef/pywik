@@ -2530,3 +2530,6 @@ R,Mozilla/5.0 (compatible; Exabot/3.0; +http://www.exabot.com/go/robot)
 R,Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/534+ (KHTML, like Gecko) BingPreview/1.0b
 R,Mozilla/5.0 (compatible; YodaoBot/1.0; http://www.yodao.com/help/webmaster/spider/; )
 C,Mozilla/5.0 (compatible; NetcraftSurveyAgent/1.0; +info@netcraft.com)
+R,Mozilla/5.0 (Windows; U; Windows NT 5.1; zh-CN; rv:1.8.0.11) Gecko/20070312 Firefox/1.5.0.11; 360Spider
+R,Wotbox/2.01 (+http://www.wotbox.com/bot/)
+R,Mozilla/5.0 (compatible; AhrefsBot/3.1; +http://ahrefs.com/robot/)
