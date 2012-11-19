@@ -1,2 +1,6 @@
 arch
-enf
+env
+*.pyc
+data/
+dump/
+logs/
