@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Reports for {{site}} ({{data.count()}})</h1>
+<div>Query: {{key}} == {{val}}</div>
+<table>
+   <thead>
+      <tr>
+         <td>Time</td>
+         <td>Status</td>
+         {% if not key == 'path'%}<td>Path</td>{%endif%}
+         {% if not key == 'country'%}<td>Ct</td>{%endif%}
+         {% if not key == 'hostname'%}<td>Hostname</td>{%endif%}
+         {% if not key == 'remote_addr'%}<td>IP</td>{%endif%}
+         {% if not key == 'http_referer'%}<td>Referer</td>{%endif%}
+         {% if not key == 'http_user_agent'%}<td>UA</td>{%endif%}
+      </tr>
+   </thead>
+   <tbody>
+      {% for item in data %}
+      <tr>
+         <td>{{ item.timestamp }}</td>
+         <td>{{ item.status }}</td>
+         {% if not key == 'path'%}<td><a href="/{{site}}/{{timeframe}}?k=path&q={{itempath}}">{{ item.path }}</a></td>{%endif%}
+         {% if not key == 'country'%}<td><a href="/{{site}}/{{timeframe}}?k=country&q={{item.country}}">{{ item.country }}</a></td>{%endif%}
+         {% if not key == 'hostname'%}<td><a href="/{{site}}/{{timeframe}}?k=hostname&q={{item.hostname}}">{{ item.hostname }}</a></td>{%endif%}
+         {% if not key == 'remote_addr'%}<td><a href="/{{site}}/{{timeframe}}?k=remote_addr&q={{item.remote_addr}}">{{ item.remote_addr }}</a></td>{%endif%}
+         {% if not key == 'http_referer'%}<td><a href="/{{site}}/{{timeframe}}?k=http_referer&q={{item.http_referer}}">{{ item.http_referer }}</a></td>{%endif%}
+         {% if not key == 'http_user_agent'%}<td><a href="/{{site}}/{{timeframe}}?k=http_user_agent&q={{item.http_user_agent}}">{{ item.http_user_agent }}</a></td>{%endif%}
+      </tr>
+      {% endfor %}
+   </tbody>
+</table>
+{% endblock %}

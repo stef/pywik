@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block scripts %}
+  <script>
+  var stack = function(data, target) {
+      var data0 = d3.layout.stack()(data),
+          color = d3.interpolateRgb("#aad", "#556");
+
+      var width = 900,
+          height = 331,
+          mx = data0[0].length - 1,
+          my = d3.max(data0, function(d) {
+            return d3.max(d, function(d) {
+              return d.y0 + d.y;
+            });
+          });
+
+      var area = d3.svg.area()
+          .x(function(d) { return d.x * width / mx; })
+          .y0(function(d) { return height - d.y0 * height / my; })
+          .y1(function(d) { return height - (d.y + d.y0) * height / my; });
+
+      var vis = d3.select("#"+target)
+        .append("svg")
+          .attr("width", width)
+          .attr("height", height)
+          .attr("version","1.1")
+          .attr("xmlns","http://www.w3.org/2000/svg")
+          ;
+
+      var paths = vis.selectAll("path")
+          .data(data0)
+          .enter().append("path")
+          .style("fill", function() { return color(Math.random()); })
+          .attr("d", area);
+      paths.append("title")
+         .append("text")
+         .attr("text-anchor", "middle")
+         .attr("dy", ".3em")
+         .text(function(d) { return d[0].text; });
+  }
+  {%for report in data if report.total > 0 and report.sparks|length>2 %}
+  stack({{report.sparks|safe}}, '{{report.title}}-chart');
+  {%endfor%}
+  </script>
+{% endblock %}
+{% block content %}
+
+<h1>Reports for {{site}}</h1>
+{% for report in data if report.total>0 %}
+   <h2>{{report.title}} ({{report.total}})</h2>
+   <div id="{{report.title}}-chart"> </div>
+   <div class="container">
+     <table>
+        <thead>
+           <tr>
+              <td>count</td>
+              {%for caption in report.fields %}<td>{{caption}}</td>{%endfor%}
+           </tr>
+        </thead>
+        <tbody>
+           {% for item in report.lines %}
+           <tr>
+              <td>{{ item.0 }}</td>
+                 {% for key in report.fields %}
+                 <td><a href="/{{site}}/{{timeframe}}?k={{key}}&q={{item.1[key]}}">{{ item.1[key] }}</a></td>
+                 {% endfor %}
+           </tr>
+           {% endfor %}
+        </tbody>
+     </table>
+   </div>
+{%endfor%}
+
+{% endblock %}

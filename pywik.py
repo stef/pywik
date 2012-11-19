@@ -3,429 +3,204 @@
 
 # todo, enable and handle: $http_HEADER, $cookie_COOKIE in nginx logformat def
 
-import csv, sys, os, datetime, re
-from urllib2 import unquote
-from dateutil.parser import parse
-from pbs import host, ErrorReturnCode_1
-from urlparse import urlparse, parse_qs
+import sys, datetime, json
+import pymongo
 from operator import itemgetter
-import GeoIP
+from load import init_tags
 
-geoipdb=None
-torexits=None
-agents=None
-countries=None
-ignorepaths=None
-goodpaths=None
-ignoremissing=None
-tagfilters=None
-ipcache={}
-ownhosts=[]
-headers = ["time_local","connection","remote_addr","https","http_host",
-           "request","status","request_length","body_bytes_sent","request_time",
-           "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
-           # below are computed fields
-           "request_type", "path", "http_version", "ispage", "isbot",
-           "hostname", "extref","search_query","country","year","month","day"]
+# what i want to see
+# good
+#    graph of hits/day
+#    popular pages
+#    referers
+#    search queries
+#    viewers (see historical visits if any, distinguish by agent?)
+#    bots
+#    non-404 error requests, hosts
+# bad
+#    tor visits
+#    non-typo 404 pages
+#    top non-browser-user-agents (cross-ref with classes of other requests)
+#    masquerading crawlers
 
-basepath=os.path.dirname(os.path.abspath(__file__))
-
-def init():
-    global geoipdb, torexits, agents, countries, \
-           ignorepaths, goodpaths, ignoremissing, \
-           ownhosts, tagfilters
-    # Load the database once and store it globally in interpreter memory.
-    geoipdb = GeoIP.open('%s/data/GeoIP.dat' %
-                         basepath,GeoIP.GEOIP_STANDARD)
-
-    fp=open('%s/data/torexits.csv' % basepath,'r')
-    torexits=[x.strip() for x in fp]
-    fp.close()
-
-    fp=open('%s/data/agents.csv' % basepath,'r')
-    agents={}
-    for line in fp:
-        line=' '.join(line.split())
-        if not line: continue
-        type,text=line.split(',',1)
-        agents[text]=type.split()
-    fp.close()
-
-    csvfile = open('%s/data/countrylist.csv' % basepath,'r')
-    dialect = csv.Sniffer().sniff(csvfile.read(32768))
-    csvfile.seek(0)
-    headers = csv.reader(csvfile, dialect=dialect).next()
-    reader = UnicodeDictReader(csvfile,
-                               fieldnames=headers,
-                               dialect=dialect)
-    countries={}
-    for line in reader:
-        countries[line['ISO 3166-1 2 Letter Code']]=line
-    csvfile.close()
-
-    fp=open('%s/data/%s/ignorepaths' % (basepath, sys.argv[1]),'r')
-    ignorepaths=[re.compile(x.strip()) for x in fp]
-    fp.close()
-
-    fp=open('%s/data/%s/ignoremissing' % (basepath, sys.argv[1]),'r')
-    ignoremissing=[re.compile(x.strip()) for x in fp]
-    fp.close()
-
-    fp=open('%s/data/%s/goodpaths' % (basepath, sys.argv[1]),'r')
-    goodpaths=[re.compile(r"%s" % x.strip()) for x in fp]
-    fp.close()
-
-    fp=open('%s/data/%s/ownhosts' % (basepath, sys.argv[1]),'r')
-    ownhosts=[re.compile("%s://%s/" % (scheme, host.strip())) for host in fp for scheme in ['http','https']]
-    fp.close()
-
-    tagfilters=init_tags()
-
-def init_tags():
-    fp=open('%s/data/%s/classes' % (basepath, sys.argv[1]),'r')
-    tags={}
-    try:
-        while True:
-            tag=fp.next().strip()
-            if not tag: continue
-            patterns=[]
-            tags[tag]=patterns
-            while True:
-                field=fp.next().strip()
-                if not field: break
-                if not field in headers:
-                    # skip to the next definition
-                    while True:
-                        tmp=fp.next()
-                        if not tmp.strip(): break
-                else:
-                    pattern=fp.next()[:-1] # stripping trailing \n
-                    if pattern:
-                        patterns.append((field,re.compile(pattern)))
-    except StopIteration:
-        pass
-    fp.close()
-    return tags
-
-def UnicodeDictReader(utf8_data, **kwargs):
-    csv_reader = csv.DictReader(utf8_data, **kwargs)
-    for row in csv_reader:
-        yield dict([(key, unicode(value or "", "utf8")) for key, value in row.iteritems()])
+queries=[ ('pages', {'country': {'$ne': 'UA'},
+                     '$or': [{'bad': { '$size': 0 }},{'bad': {'$exists': False}}],
+                     '$and': [ { 'tags': 'page' }, { 'tags': { '$nin': ['bot'] } } ]}, ['path']),
+          ('extrefs', {'country': {'$ne': 'UA'},
+                        'search_query': "",
+                        'tags': 'extref',
+                        "http_referer": {'$ne': '-'}},['http_referer']),
+          ('searchqueries', {'search_query': {'$ne': ""}},['search_query']),
+          ('tor', {'tags': ['tor', 'page'], },['path', 'hostname', 'http_user_agent']),
+          ('tor404', {'tags': ['tor'], 'status': 404 },['path', 'hostname', 'http_user_agent']),
+          ('errors', {'$or': [{'status': {'$lt': 200}},
+                              {'status': {'$gt': 400}}],
+                      'status': {'$ne': 404}},['status', 'path']),
+          ('unknown', {'tags': 'unknown'},['path']),
+          ('notfound', {'tags': 'notfound'},['path']),
+          ('bots', {'tags': 'bot'},['http_user_agent']),
+          ('404s', {'status': 404},['path']),
+        ]
+spans={'today': 1,
+       'yesterday': 2,
+       'recently': 3,
+       'week': 7,
+       'month': 30,
+       'quarter': 121,
+       }
 
 def spark(data):
+    if not data: return ('',0,0)
     blocks = u' ▁▂▃▄▅▆▇█'
     lo = float(min(data))
     hi = float(max(data))
     incr = (hi - lo)/(len(blocks)-1) or 1
-    return ''.join([(blocks[int((float(n) - lo)/incr)]
+    return (''.join([(blocks[int((float(n) - lo)/incr)]
                      if n else
                      ' ')
-                    for n in data])
+                    for n in data]),
+            int(lo),
+            int(hi))
 
-class GMT1(datetime.tzinfo):
-    def __init__(self):         # DST starts last Sunday in March
-        d = datetime.datetime(2012, 4, 1)   # ends last Sunday in October
-        self.dston = d - datetime.timedelta(days=d.weekday() + 1)
-        d = datetime.datetime(2012, 11, 1)
-        self.dstoff = d - datetime.timedelta(days=d.weekday() + 1)
-    def utcoffset(self, dt):
-        return datetime.timedelta(hours=1) + self.dst(dt)
-    def dst(self, dt):
-        if self.dston <=  dt.replace(tzinfo=None) < self.dstoff:
-            return datetime.timedelta(hours=1)
-        else:
-            return datetime.timedelta(0)
-    def tzname(self,dt):
-         return "GMT +1"
+def sparks(host, key, q):
+    db=pymongo.Connection().pywik
+    return spark([x['count']
+                  for x
+                  in db.__getitem__(host).group([key],
+                                                       q,
+                                                       {'count': 0},
+                                                       'function(doc, out){ out.count++;}')])
 
-def uunquote(txt):
+def tostr(x):
     try:
-        return unquote(txt.encode('ascii')).decode('utf8')
+        return str(x).encode('raw_unicode_escape').decode('utf-8')
     except:
-        return unquote(txt)
+        return repr(x)
 
-# explode the request field into request_type, path and protocol
-def explodereq(req):
-    tmp=req.split()
-    if len(tmp)<3:
-        tmp.extend([''] * (3-len(tmp)))
-    path=uunquote(' '.join(tmp[1:-1]))
-    return [tmp[0], path, tmp[-1]]
+def displayQ(host, title, q, fields):
+    db=pymongo.Connection().pywik
+    res=[]
+    cur=db.__getitem__(host).find(q, fields)
+    res.append('Total %s %s' % (title, cur.count()))
 
-def todate(s):
-    date, time = s.split(':',1)
-    try:
-        tmp=parse("%s %s" % (date.replace('/','-'), time), dayfirst=True)
-    except:
-        tmp=parse(s)
-    return tmp
+    res.append(u'\n'.join(
+        [u"%s\t%s" % (int(x['count']),
+                      u' '.join([tostr(x[f]) for f in fields]))
+         for x in sorted(db.__getitem__(host).group(fields,
+                                                    q,
+                                                    {'count': 0},
+                                                    'function(doc, out){ out.count++;}'),
+                         key=itemgetter('count'),
+                         reverse=True)]).encode('utf8'))
+    return res
 
-def textfilterre(text, patterns=[], exclude=True):
-    if type(text)!=unicode: return text
-    for mask in patterns:
-        if mask.match(text):
-            return exclude
-    return not exclude
+def pywik(site, span=1):
+    db=pymongo.Connection().pywik
+    now=datetime.datetime.now()
+    qspan = now - datetime.timedelta(days=(7 if span<8 else span))
+    span = now - datetime.timedelta(days=span)
 
-def gethost(ip):
-    if ip in ipcache: return ipcache[ip]
-    try:
-        ipcache[ip]=host(ip).split(' ')[-1][:-2]
-        return ipcache[ip]
-    except ErrorReturnCode_1:
-        ipcache[ip]=''
-        return ''
+    reports=queries[:]
+    for tag in init_tags(site).keys():
+        reports.append((tag, {'$or': [{'bad': { '$size': 0 }},
+                                      {'bad': {'$exists': False}}],
+                              '$and': [ { 'tags': ['page', tag] },
+                                        { 'tags': { '$nin': ['bot'] } } ]},
+                        ['path']))
 
-def get_query(url):
-    url=str(url)
-    urlobj=urlparse(url)
-    query=parse_qs(urlobj.query)
-    if (urlobj.netloc.startswith('www.google.') or
-        (urlobj.netloc.endswith("bing.com") and urlobj.path.startswith('/search'))):
-        return query.get('q',[''])[0].decode('utf8')
-    return ''
+    res=[]
+    for title, q, fields in reports:
+        qsparks=dict([x for x in q.items()])
+        qsparks["timestamp"]={'$gt': qspan, '$lt': now}
 
-def get_country(ip):
-    return geoipdb.country_code_by_addr(ip) or ''
+        q["timestamp"]={'$gt': span, '$lt': now}
+        res.append(
+            {'total': db.__getitem__(site).find(q, fields).count(),
+             'fields': fields,
+             'title': title,
+             'sparks': tod3(db.__getitem__(site).group(fields+['year','month','day'],
+                                                       qsparks,
+                                                       {'count': 0},
+                                                       'function(doc, out){ out.count++;}'),fields),
+             'lines': [ (int(x['count']),
+                         dict([(f,x[f]) for f in fields]) )
+                        for x in sorted(db.__getitem__(site).group(fields,
+                                                                   q,
+                                                                   {'count': 0},
+                                                                   'function(doc, out){ out.count++;}'),
+                                        key=itemgetter('count'),
+                                        reverse=True ) ] } )
+    return res
 
-def count(d, e, l):
-    cnt, elems=d.get(e,[0,[]])
-    elems.append(l)
-    d[e]=[cnt+1,elems]
-
-def printset(title,items):
-    print title
-    print u'\n'.join(items).encode('utf8')
-    print
-
-def cnt2lst(cnt):
-    return [u"%s\t%s" % (val[0], key) for key, val in sorted(cnt.items(),reverse=True, key=itemgetter(1))]
-
-def process():
-    notoks={}
-    notfounds={}
-    unknowns={}
-    bots={}
-    refs={}
-    pages={}
-    nations={}
-    hosts={}
-    days={}
-    months={}
-    searches={}
-    fromtor={}
-    tagged={}
-
-    now=datetime.datetime.now(GMT1())
+def ascii():
+    now=datetime.datetime.now()
     span=None
-    if len(sys.argv)>2:
-        if sys.argv[1]=="today":
-            span = now - datetime.timedelta(days=1)
-            del sys.argv[1]
-        elif sys.argv[1]=="yesterday":
-            span = now - datetime.timedelta(days=2)
-            del sys.argv[1]
-        elif sys.argv[1]=="recently":
-            span = now - datetime.timedelta(days=3)
-            del sys.argv[1]
-        elif sys.argv[1]=="week":
-            span = now - datetime.timedelta(days=7)
-            del sys.argv[1]
-        elif sys.argv[1]=="month":
-            span = now - datetime.timedelta(days=30)
-            del sys.argv[1]
-        elif sys.argv[1]=="quarter":
-            span = now - datetime.timedelta(days=121)
-            del sys.argv[1]
+    for k, v in spans.items():
+        if k in sys.argv:
+            span = now - datetime.timedelta(days=v)
+            del sys.argv[sys.argv.index(k)]
     if not span:
         span = now - datetime.timedelta(days=1)
 
-    init()
+    reports=[]
+    for title, q, fields in queries:
+        if title in sys.argv:
+            reports.append((title, q, fields))
+            del sys.argv[sys.argv.index(title)]
 
-    csv.register_dialect('nginx',
-                         **{'lineterminator': '\r\n',
-                            'skipinitialspace': False,
-                            'quoting': 0,
-                            'delimiter': ';',
-                            'quotechar': '"',
-                            'doublequote': False})
-    reader = UnicodeDictReader(sys.stdin, fieldnames=headers, dialect='nginx')
-    # skip headers
-    reader.next()
+    if not reports: reports=queries
+    res=[]
+    for title, q, fields in reports:
+        q["timestamp"]={'$gt': span, '$lt': now}
+        gfx, lo, hi = sparks(sys.argv[1], 'day', q)
+        res.append((u"%30s %8s %s %s" % (title, lo, gfx, hi)).encode('utf8'))
 
-    print "Starting from", span
+        res.extend(displayQ(sys.argv[1], title, q, fields))
+        res.append('='*80)
+    return res
 
-    for line in reader:
-        # skip 1st line, 304 and anything outside timespan
-        if (line['status'] in ['304'] or
-            line['time_local']=="time_local"): continue
-        date=todate(line['time_local'])
-        if date<span: continue
+def getentries(site,key,val, span):
+    db=pymongo.Connection().pywik
+    now=datetime.datetime.now()
+    span = now - datetime.timedelta(days=span)
+    return db.__getitem__(site).find({key:val,
+                                      "timestamp": {'$gt': span,
+                                                    '$lt': now}})
 
-        # request_type, path, http_version
-        (line['request_type'],
-         line['path'],
-         line['http_version'])=explodereq(line['request'])
-
-        # skip all requests to robots.txt
-        if line['path']=='/robots.txt': continue
-
-        if line['remote_addr'] in torexits:
-            tmp=' '.join([line['path'].decode('utf8'),
-                          line['status'],
-                          line['http_referer'],
-                          line['http_user_agent']
-                          ])
-            count(fromtor,tmp,line)
-            continue
-
-        # not ok?
-        if ('200'>line['status'] or
-            line['status']>='400' and
-            line['status']!='404'):
-            count(notoks,' '.join([line['status'], line['request']]),line)
-            continue
-
-        # extract query strings if any
-        line['search_query']=get_query(line['http_referer'])
-        if line['search_query']:
-            count(searches,line['search_query'],line)
-
-        # Referer
-        # unquote http_referer
+def tod3(entries,fields):
+    acc={}
+    mx = None
+    mn = None
+    for item in entries:
+        date=(int(item['year']),int(item['month']),int(item['day']))
+        title=u' '.join([unicode(item[k]) for k in fields])
+        tmp={'x': date, 'y': int(item['count']), 'title': title}
         try:
-            tmp=uunquote(line['http_referer']).decode('utf8')
-        except:
-            tmp=uunquote(line['http_referer'])
-        # simplify referers
-        urlobj=urlparse(tmp)
-        if (tmp.startswith('http://www.facebook.com/l.php?u=') or
-            tmp.startswith('http://m.facebook.com/l.php?u=')):
-            line['http_referer']='http://www.facebook.com/'
-        elif urlobj.netloc.startswith('www.google.') and urlobj.path=="/imgres":
-            query=parse_qs(urlobj.query)
-            line['image']=query.get('imgurl',[''])[0]
-            line['imageref']=query.get('imgrefurl',[''])[0]
-            line['http_referer']='%s://%s/imgres?imgurl=%s' % (urlobj.scheme,
-                                                               urlobj.netloc,
-                                                               line['image'])
-        elif urlobj.netloc.startswith('www.google.') and urlobj.path=="/url":
-            query=parse_qs(urlobj.query)
-            line['http_referer']='%s://%s/url=%s' % (urlobj.scheme,
-                                                     urlobj.netloc,
-                                                     uunquote(query.get('url',[''])[0]))
-        elif urlobj.netloc.startswith('webcache.googleusercontent.') and urlobj.path=="/search":
-            query=parse_qs(urlobj.query)
-            try:
-                u=uunquote(query.get('q',[':'])[0]).split(':',1)[1].decode('utf8')
-            except:
-                u=uunquote(query.get('q',[':'])[0]).split(':',1)[1]
-            line['http_referer']='%s://%s/url=%s' % (urlobj.scheme,
-                                                     urlobj.netloc,
-                                                     u)
-        else:
-            line['http_referer']=tmp
-        # extref?
-        line['extref']=not textfilterre(line['http_referer'],
-                                    patterns=ownhosts)
+            acc[title].append(tmp)
+        except KeyError:
+            acc[title]=[tmp]
+        if not mx or mx < date:
+            mx=date
+        if not mn or mn > date:
+            mn=date[:3]
+    ret = []
+    for k, sparse in acc.items():
+        res=[]
+        i=0
+        if k in ['-','']: continue
+        cur=datetime.date(*mn)- datetime.timedelta(days=1)
+        for item in sorted(sparse, key=itemgetter('x')):
+            diff=(datetime.date(*item['x'])-cur).days
+            if diff>1: res.extend([{'x': len(res)+j, 'y': 0, 'text': item['title']} for j in xrange(diff-1)])
+            res.append({'x': len(res), 'y': item['y'], 'text': item['title']})
+            cur=datetime.date(*item['x'])
+            i=i+1
+        diff=(datetime.date(*mx) - cur).days
+        res.extend([{'x': len(res) + j, 'y': 0} for j in xrange(diff)])
+        ret.append(res)
 
-        # is page?
-        line['ispage']=textfilterre(line['path'], patterns=goodpaths)
-        if line['status']=='404':
-            if not textfilterre(line['path'],ignoremissing):
-                count(notfounds,line['path'],line)
-            continue
-        if not line['ispage'] and not textfilterre(line['path'],ignorepaths):
-            count(unknowns,line['path'],line)
-            continue
+    return json.dumps(ret)
 
-        # domain name
-        line['hostname']=gethost(line['remote_addr'])
+if __name__ == "__main__":
+    print '\n'.join(ascii())
 
-        # append Country
-        if not line['country']: line['country']=get_country(line['remote_addr'])
-
-        # isbot?
-        # B = Browser
-        # C = Link-, bookmark-, server- checking
-        # D = Downloading tool
-        # P = Proxy server, web filtering
-        # R = Robot, crawler, spider
-        # S = Spam or bad bot
-        line['agent']=agents.get(line['http_user_agent'],['?'])
-        if set(line['agent']).intersection(['S', 'P', 'R', 'C']):
-            tmp=' '.join([''.join(line['agent']), line['http_user_agent']])
-            count(bots,tmp,line)
-            continue
-
-        if line['extref'] and not line['search_query']:
-            count(refs,line['http_referer'],line)
-
-        line['msec']=float(line['msec'])
-        line['request_time']=float(line['request_time'])
-        line['connection']=int(line['connection'])
-        line['body_bytes_sent']=int(line['body_bytes_sent'])
-        line['request_length']=int(line['request_length'])
-        line['year']=date.year
-        line['month']=date.month
-        line['day']=date.day
-        line['https']=True if line['https']=='1' else False
-        line['status']=int(line['status'])
-
-        inclass=False
-        for tag, patterns in tagfilters.items():
-            for key, pattern in patterns:
-                if textfilterre(line[key], patterns=[pattern]):
-                    if not tag in tagged:
-                        tagged[tag]={}
-                    count(tagged[tag],line[key],line)
-                    inclass=True
-
-        # count pages, hosts, days and months for pages
-        if not line['isbot'] and line['ispage']:
-            if not inclass: count(pages,line['path'],line)
-
-            cnt, elems=nations.get(line['country'],[0,[]])
-            elems.append(line)
-            nations[line['country']]=[cnt+1,elems]
-
-            tmp=' '.join([line['country'],
-                          line['hostname'] or line['remote_addr'],
-                          line['http_user_agent']
-                          ])
-            count(hosts,tmp,line)
-
-            count(days,line['day'],line)
-
-            count(months,line['month'],line)
-
-    printset("Errors",cnt2lst(notoks))
-    printset("Unknown",cnt2lst(unknowns))
-    printset("Bots",cnt2lst(bots))
-    printset("Referers",cnt2lst(refs))
-    for tag, cnt in tagged.items():
-        printset(tag,cnt2lst(cnt))
-    printset("Pages",cnt2lst(pages))
-    printset("Countries",[u"%s\t%s" % (val[0],
-                                       countries.get(key,
-                                                     {'Common Name': key})['Common Name'] if key else '-')
-                          for key, val
-                          in sorted(nations.items(),
-                                    reverse=True,
-                                    key=itemgetter(1))])
-    printset("Searches",cnt2lst(searches))
-    printset("From TOR",cnt2lst(fromtor))
-    print spark([val[0]
-                 for key, val
-                 in sorted(days.items(),
-                           reverse=True)]).encode('utf8')
-    printset("Days",cnt2lst(days))
-    print spark([val[0]
-                 for key, val
-                 in sorted(months.items(),
-                           reverse=True)]).encode('utf8')
-    printset("Months",cnt2lst(months))
-    printset("Not founds",cnt2lst(notfounds))
-    printset("Hosts",cnt2lst(hosts))
-
-process()
