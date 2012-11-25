@@ -1,0 +1,5 @@
+[app]
+secret_key          = some-long-random-string
+[server]
+port                = 5000
+debug               = True
