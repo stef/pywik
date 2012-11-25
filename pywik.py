@@ -6,7 +6,7 @@
 import sys, datetime, json
 import pymongo
 from operator import itemgetter
-from load import init_tags
+from plugins import init_plugins
 
 # what i want to see
 # good
@@ -26,13 +26,7 @@ from load import init_tags
 queries=[ ('pages', {'country': {'$ne': 'UA'},
                      '$or': [{'bad': { '$size': 0 }},{'bad': {'$exists': False}}],
                      '$and': [ { 'tags': 'page' }, { 'tags': { '$nin': ['bot'] } } ]}, ['path']),
-          ('extrefs', {'country': {'$ne': 'UA'},
-                        'search_query': "",
-                        'tags': 'extref',
-                        "http_referer": {'$ne': '-'}},['http_referer']),
           ('searchqueries', {'search_query': {'$ne': ""}},['search_query']),
-          ('tor', {'tags': ['tor', 'page'], },['path', 'hostname', 'http_user_agent']),
-          ('tor404', {'tags': ['tor'], 'status': 404 },['path', 'hostname', 'http_user_agent']),
           ('errors', {'$or': [{'status': {'$lt': 200}},
                               {'status': {'$gt': 400}}],
                       'status': {'$ne': 404}},['status', 'path']),
@@ -100,16 +94,11 @@ def pywik(site, span=1):
     qspan = now - datetime.timedelta(days=(7 if span<8 else span))
     span = now - datetime.timedelta(days=span)
 
-    reports=queries[:]
-    for tag in init_tags(site).keys():
-        reports.append((tag, {'$or': [{'bad': { '$size': 0 }},
-                                      {'bad': {'$exists': False}}],
-                              '$and': [ { 'tags': ['page', tag] },
-                                        { 'tags': { '$nin': ['bot'] } } ]},
-                        ['path']))
-
     res=[]
+    reports=queries[:]
+    reports.extend(init_plugins(site)[1])
     for title, q, fields in reports:
+        #print >>sys.stderr, title, q, fields
         qsparks=dict([x for x in q.items()])
         qsparks["timestamp"]={'$gt': qspan, '$lt': now}
 
@@ -143,6 +132,7 @@ def ascii():
         span = now - datetime.timedelta(days=1)
 
     reports=[]
+    queries.extend(init_plugins(sys.argv[1])[1])
     for title, q, fields in queries:
         if title in sys.argv:
             reports.append((title, q, fields))
