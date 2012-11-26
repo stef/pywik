@@ -1,7 +1,17 @@
 * pywik
 Welcome to pywik the static webserver csv logfile analyzer.
+** Features
+   can filter and list:
+   - Visited Pages,
+   - Search Queries,
+   - Server errors,
+   - unknown files (not in the good set),
+   - bot visits,
+   - 404 pages (malware shows up here),
+   - visits from tor users (and 404s from tor users),
+   - external referers
 ** Setup
-   install the dependencies:
+   install the dependencies (you will need mongodb):
    #+BEGIN_SRC
    virtualenv --no-site-packages env
    source env/bin/activate
