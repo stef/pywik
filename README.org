@@ -84,13 +84,19 @@ Welcome to pywik the static webserver csv logfile analyzer.
 ** Running pywik
    #+BEGIN_SRC
    ./fetchlogs.sh myhost.net
-   ./pywik.py month myhost <logs/access.csv | less
+   ./pywik.py month myhost | less
    #+END_SRC
    if you find anything interesting, you can extract all logentries
    matching certain fields:
    #+BEGIN_SRC
    ./getentries.py logs/access.csv myhost path 'cart.php?a=asdf&templatefile=../../../configuration.php'
    #+END_SRC
+   Alternatively you can also run pywik as a Flask webapp:
+   #+BEGIN_SRC
+   ./webapp.py
+   #+END_SRC
+   Point your browser at http://localhost:5002/myhost/today
+   and start clicking around.
 ** Plugins
    You can easily extend the functionality of pywik using
    plugins. Plugins can be
