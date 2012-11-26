@@ -55,7 +55,15 @@ Welcome to pywik the static webserver csv logfile analyzer.
       are hit by googlebot - notice the double rule one for the path,
       the other for the user agent
 ** Web-server logformat
-   set your webserver (nginx) to use these as logformats:
+   set your webserver to use these as logformats:
+*** Apache
+   For Apache the following should work:
+   #+BEGIN_SRC
+   LogFormat "%{%Y-%m-%dT%H:%M:%S%z}t;x;%h;0;%v;%R;%s;%I;%O;%D;%{Referer}i;%u;%{User-agent}i;%{X-Forwarded-For}i;x" csv-http
+   LogFormat "%{%Y-%m-%dT%H:%M:%S%z}t;x;%h;1;%v;%R;%s;%I;%O;%D;%{Referer}i;%u;%{User-agent}i;%{X-Forwarded-For}i;x" csv-https
+   #+END_SRC
+*** nginx
+   For nginx the following should work:
    #+BEGIN_SRC
    log_format csv-http  '"$time_local";$connection;"$remote_addr";0;"$http_host";"$request";'
       '$status;$request_length;$body_bytes_sent;$request_time;"$http_referer";"$remote_user";'
@@ -73,11 +81,6 @@ Welcome to pywik the static webserver csv logfile analyzer.
     access_log /var/log/nginx/access.csv csv-https;
    #+END_SRC
    respectively for https hosts stanzas.
-   For Apache the following should work:
-   #+BEGIN_SRC
-   LogFormat "%{%Y-%m-%dT%H:%M:%S%z}t;x;%h;0;%v;%R;%s;%I;%O;%D;%{Referer}i;%u;%{User-agent}i;%{X-Forwarded-For}i;x" csv-http
-   LogFormat "%{%Y-%m-%dT%H:%M:%S%z}t;x;%h;1;%v;%R;%s;%I;%O;%D;%{Referer}i;%u;%{User-agent}i;%{X-Forwarded-For}i;x" csv-https
-   #+END_SRC
 ** Running pywik
    #+BEGIN_SRC
    ./fetchlogs.sh myhost.net
@@ -87,6 +90,54 @@ Welcome to pywik the static webserver csv logfile analyzer.
    matching certain fields:
    #+BEGIN_SRC
    ./getentries.py logs/access.csv myhost path 'cart.php?a=asdf&templatefile=../../../configuration.php'
+   #+END_SRC
+** Plugins
+   You can easily extend the functionality of pywik using
+   plugins. Plugins can be
+   - global if you put them into data/plugins
+   - or site-specific if you put them in data/<site>/plugins
+   There are two kind of plugins:
+   - those that generate queries for filtered listings for output,
+   - and those that enrich the database with while parsing the logfile
+*** query plugins
+    Query plugins implement a queries() function that returns a list of:
+   #+BEGIN_SRC
+    ('title', {'field1': value1, 'field2': value2},['displayfield1', 'displayfield2'])
+   #+END_SRC
+    - Where 'title' is the title to be displayed,
+    - the second elem is a dict containing a mongodb filter expression,
+    - the final elem is a list of fieldnames to be returned by mongo
+      for each mathing elements
+
+    This can be as simple as:
+
+   #+BEGIN_SRC python
+def queries():
+    return [('tor', {'tags': ['tor', 'page'], },['path', 'hostname', 'http_user_agent']),
+            ('tor404', {'tags': ['tor'], 'status': 404 },['path', 'hostname', 'http_user_agent'])]
+   #+END_SRC
+*** loader plugins
+    Loader plugins enrich the information in each log entry during
+    database import. A loader plugin implements a process(entry)
+    interface, that returns the changed entry.
+
+   #+BEGIN_SRC python
+def process(entry):
+   if entry['path']=='/foo': entry['foo']='bar'
+   return entry
+   #+END_SRC
+
+   Here's a more advanced example (you can find more in data/plugins)
+   #+BEGIN_SRC python
+from load import basepath
+with open('%s/data/torexits.csv' % basepath,'r') as fp:
+   torexits=[x.strip() for x in fp]
+#print '[tor plugin]', len(torexits), 'torexits loaded'
+
+def process(entry):
+   if entry['remote_addr'] in torexits:
+      entry['tags'].append('tor')
+   return entry
    #+END_SRC
 ** Bugs
    pywik is slow, due to resolving hostnames on each run, if you want to
