@@ -8,8 +8,9 @@ def queries():
                           'tags': 'extref',
                           "http_referer": {'$ne': '-'}},['http_referer'])]
 
-ownhosts=[]
+ownhosts=None
 def init(ctx):
+    global ownhosts
     with open('%s/data/%s/ownhosts' % (basepath, ctx['host']),'r') as fp:
         ownhosts=[re.compile("%s://%s/" % (scheme, host.strip())) for host in fp for scheme in ['http','https']]
 
