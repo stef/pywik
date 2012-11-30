@@ -20,6 +20,7 @@
 from flask import Flask, request, render_template, redirect, flash, jsonify
 from pywik import pywik, getentries
 from common import cfg
+from urllib import quote_plus, unquote_plus
 
 menu_items  = (('/today'            , 'today')
               ,('/yesterday'        , 'yesterday')
@@ -79,6 +80,13 @@ def stats(site, timeframe):
                           ,timeframe = timeframe
                           ,site = site
                           )
+
+@app.template_filter()
+def quote(txt):
+    if type(txt) in [unicode, str]:
+        return quote_plus(txt.encode('utf8'))
+    else:
+        return txt
 
 if __name__ == "__main__":
     app.run(debug        = cfg.get('server', 'debug')
