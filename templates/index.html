@@ -62,7 +62,7 @@
            <tr>
               <td>{{ item.0 }}</td>
                  {% for key in report.fields %}
-                 <td><a href="/{{site}}/{{timeframe}}?k={{key}}&q={{item.1[key]}}">{{ item.1[key] }}</a></td>
+                 <td><a href="/{{site}}/{{timeframe}}?k={{key}}&q={{item.1[key]|quote}}">{{ item.1[key] }}</a></td>
                  {% endfor %}
            </tr>
            {% endfor %}
