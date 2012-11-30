@@ -14,7 +14,6 @@ import GeoIP
 import pymongo
 
 geoipdb=None
-agents=None
 countries=None
 ignorepaths=None
 goodpaths=None
@@ -24,8 +23,8 @@ headers = ["time_local","connection","remote_addr","https","http_host",
            "request","status","request_length","body_bytes_sent","request_time",
            "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
            # below are computed fields
-           "request_type", "path", "http_version", "from_tor", "ispage", "isbot",
-           "hostname", "extref","search_query","country","year","month","day", "tags"
+           "request_type", "path", "http_version", "hostname", "search_query",
+           "country","year","month","day", "tags",
            ]
 
 basepath=os.path.dirname(os.path.abspath(__file__))
@@ -33,21 +32,10 @@ basepath=os.path.dirname(os.path.abspath(__file__))
 db=None
 
 def init():
-    global geoipdb, agents, countries, \
-           ignorepaths, goodpaths, ignoremissing, \
-           filters
+    global geoipdb, countries, ignorepaths, goodpaths, ignoremissing, filters
     # Load the database once and store it globally in interpreter memory.
     geoipdb = GeoIP.open('%s/data/GeoIP.dat' %
                          basepath,GeoIP.GEOIP_STANDARD)
-
-    fp=open('%s/data/agents.csv' % basepath,'r')
-    agents={}
-    for line in fp:
-        line=' '.join(line.split())
-        if not line: continue
-        type,text=line.split(',',1)
-        agents[text]=type.split()
-    fp.close()
 
     csvfile = open('%s/data/countrylist.csv' % basepath,'r')
     dialect = csv.Sniffer().sniff(csvfile.read(32768))
@@ -154,11 +142,6 @@ def process():
          line['path'],
          line['http_version'])=explodereq(line['request'])
 
-        # sig based detection... :/
-        # TODO plugin
-        if '?address=' in line['path']:
-            line['bad']=['appaddr']
-
         # extract query strings if any
         line['search_query']=get_query(line['http_referer'])
 
@@ -169,17 +152,6 @@ def process():
             line['tags'].append('unknown')
         # append Country
         line['country']=get_country(line['remote_addr'])
-        # isbot?
-        # B = Browser
-        # C = Link-, bookmark-, server- checking
-        # D = Downloading tool
-        # P = Proxy server, web filtering
-        # R = Robot, crawler, spider
-        # S = Spam or bad bot
-        line['agent']=agents.get(line['http_user_agent'],['?'])
-        if set(line['agent']).intersection(['S', 'P', 'R', 'C']):
-            line['tags'].append('bot')
-        line['agent']=agents.get(line['http_user_agent'],['?'])
         line['msec']=float(line['msec'])
         line['request_time']=float(line['request_time'])
         line['connection']=int(line['connection'])
@@ -201,8 +173,6 @@ def process():
         handle(line, filters)
         if not db.__getitem__(sys.argv[1]).find_one({'connection': line['connection']}):
             i+=1
-            #print sorted([(k,v) for k,v in line.items() if v])
-            #print sorted(line['tags'])
             db.__getitem__(sys.argv[1]).save(line)
     print '\ntotal new', i
 
