@@ -1,7 +1,6 @@
 arch
 env
 *.pyc
-data/
 dump/
 logs/
 .pywikrc
