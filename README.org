@@ -169,5 +169,4 @@ def process(entry):
    return entry
    #+END_SRC
 ** Bugs
-   pywik is slow, due to resolving hostnames on each run, if you want to
-   speed it up, use a dnscache.
+   Many, reporting them is encouraged, fixing them very welcome.
