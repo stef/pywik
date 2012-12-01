@@ -52,9 +52,10 @@ bots={ "DoCoMo/2.0 N905i(c100;TB;W24H16) (compatible; Googlebot-Mobile/2.1; +htt
        "Mozilla/5.0 (compatible; Seznam screenshot-generator 2.0; +http://fulltext.sblog.cz/screenshot/)": { 'toname': dashes,
                                                                                                              'type': 'seznam',
                                                                                                              'fmt': "screenshotgenerator-%s.seznam.cz"},
-       "Mozilla/5.0 (compatible; discoverybot/2.0; +http://discoveryengine.com/discoverybot.html)": { 'toname': regex,
-                                                                                                      'type': 'disoveryengine',
-                                                                                                      'fmt': "discobot-%s.discoveryengine.com"},
+       # fixme: regex is too long for only 3 char regex in discobot
+       #"Mozilla/5.0 (compatible; discoverybot/2.0; +http://discoveryengine.com/discoverybot.html)": { 'toname': regex,
+       #                                                                                               'type': 'disoveryengine',
+       #                                                                                               'fmt': "discobot-%s.discoveryengine.com"},
     }
 
 agents={}
