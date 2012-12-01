@@ -67,7 +67,12 @@ Welcome to pywik the static webserver csv logfile analyzer.
       are hit by googlebot - notice the double rule one for the path,
       the other for the user agent
 ** Web-server logformat
-   set your webserver to use these as logformats:
+   set your webserver to use the following logformats, or use:
+   #+BEGIN_SRC
+   ./ncsa2csv.py <access.log | ./load.py mysite
+   #+END_SRC
+   to convert from NCSA logs to csv format - note however that this is
+   missing some data, that the csv based format provides.
 *** Apache
    For Apache the following should work:
    #+BEGIN_SRC

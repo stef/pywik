@@ -3,3 +3,4 @@ python-dateutil
 pbs
 Flask
 pymongo
+apachelog
