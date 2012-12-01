@@ -122,6 +122,12 @@ Welcome to pywik the static webserver csv logfile analyzer.
    There are two kind of plugins:
    - those that generate queries for filtered listings for output,
    - and those that enrich the database with while parsing the logfile
+   For examples look into data/plugins, **addrapp** and **tor** are
+   good canditates for starting off.
+*** Plugin Initialization
+    Plugins providing an init(ctx) function, will be able to
+    initialize themselves. The param ctx is a dictionary, that
+    currently only has one key 'host'.
 *** query plugins
     Query plugins implement a queries() function that returns a list of:
    #+BEGIN_SRC
