@@ -1,9 +1,13 @@
 # depends on hostname plugin
 
 from load import basepath
-with open('%s/data/torexits.csv' % basepath,'r') as fp:
-   torexits=[x.strip() for x in fp]
-#print '[tor plugin]', len(torexits), 'torexits loaded'
+
+torexits=[]
+def init(ctx):
+    global torexits
+    with open('%s/data/torexits.csv' % basepath,'r') as fp:
+        torexits=[x.strip() for x in fp]
+    #print '[tor plugin]', len(torexits), 'torexits loaded'
 
 def process(entry):
    if entry['remote_addr'] in torexits:
