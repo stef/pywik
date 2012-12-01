@@ -7,6 +7,7 @@ import sys, datetime, json
 import pymongo
 from operator import itemgetter
 from plugins import init_plugins
+from hashlib import sha1
 
 # what i want to see
 # good
@@ -191,6 +192,17 @@ def tod3(entries,fields):
 
     return json.dumps(ret)
 
+def timeline():
+    db=pymongo.Connection().pywik
+    for item in db.__getitem__(sys.argv[1]).find().sort([('time_local', pymongo.DESCENDING)]):
+        print item['timestamp'], \
+              item['status'], \
+              sha1(''.join([item['remote_addr'],item['http_user_agent']])).hexdigest()[:8], \
+              ', '.join(item['tags']), \
+              item['path'].encode('utf8') if 'rss' not in item['tags'] else '', \
+              item['http_referer'].encode('utf8') if 'extref' in item['tags'] else ''
+
 if __name__ == "__main__":
     print '\n'.join(ascii())
+    timeline()
 
