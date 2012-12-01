@@ -24,7 +24,7 @@ headers = ["time_local","connection","remote_addr","https","http_host",
            "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
            # below are computed fields
            "request_type", "path", "http_version", "hostname", "search_query",
-           "country","year","month","day", "tags",
+           "country","year","month","day", "tags", 'bot'
            ]
 
 basepath=os.path.dirname(os.path.abspath(__file__))
@@ -82,14 +82,6 @@ def explodereq(req):
     path=uunquote(' '.join(tmp[1:-1]))
     return [tmp[0], path, tmp[-1]]
 
-def todate(s):
-    date, time = s.split(':',1)
-    try:
-        tmp=parse("%s %s" % (date.replace('/','-'), time), dayfirst=True)
-    except:
-        tmp=parse(s)
-    return tmp
-
 def textfilterre(text, patterns=[], exclude=True):
     if type(text)!=unicode: return text
     for mask in patterns:
@@ -133,7 +125,7 @@ def process():
     for line in reader:
         if last and line['time_local']<last:
             continue
-        date=todate(line['time_local'])
+        date=parse(line['time_local'])
         line['timestamp']=date
 
         line['tags']=[]
@@ -146,9 +138,13 @@ def process():
         line['search_query']=get_query(line['http_referer'])
 
         # is page?
-        if textfilterre(line['path'], patterns=goodpaths):
+        if (line['path'].strip() and
+            textfilterre(line['path'], patterns=goodpaths) and
+            not textfilterre(line['path'], patterns=ignorepaths)):
             line['tags'].append('page')
-        if not 'page' in line['tags'] and not textfilterre(line['path'],ignorepaths):
+        if (line['status']==200 and
+            not 'page' in line['tags'] and
+            not textfilterre(line['path'],ignorepaths)):
             line['tags'].append('unknown')
         # append Country
         line['country']=get_country(line['remote_addr'])
@@ -182,5 +178,6 @@ if __name__ == "__main__":
     db.__getitem__(sys.argv[1]).ensure_index([('tags', 1)])
     db.__getitem__(sys.argv[1]).ensure_index([('status', 1)])
     db.__getitem__(sys.argv[1]).ensure_index([('time_local', 1)])
+    db.__getitem__(sys.argv[1]).ensure_index([('timestamp', 1)])
 
     process()
