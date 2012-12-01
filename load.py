@@ -66,13 +66,26 @@ def init():
 def UnicodeDictReader(utf8_data, **kwargs):
     csv_reader = csv.DictReader(utf8_data, **kwargs)
     for row in csv_reader:
-        yield dict([(key, unicode(value or "", "utf8")) for key, value in row.iteritems()])
+        try:
+            yield dict([(key, unicode(value or "", "utf8")) for key, value in row.iteritems()])
+        except:
+            print row.items()
+            print row
+            raise
 
 def uunquote(txt):
     try:
         return unquote(txt.encode('ascii')).decode('utf8')
     except:
         return unquote(txt)
+
+def todate(s):
+    date, time = s.split(':',1)
+    try:
+        tmp=parse(s)
+    except:
+        tmp=parse("%s %s" % (date.replace('/','-'), time), dayfirst=True)
+    return tmp
 
 # explode the request field into request_type, path and protocol
 def explodereq(req):
@@ -95,7 +108,10 @@ def get_query(url):
     query=parse_qs(urlobj.query)
     if (urlobj.netloc.startswith('www.google.') or
         (urlobj.netloc.endswith("bing.com") and urlobj.path.startswith('/search'))):
-        return query.get('q',[''])[0].decode('utf8')
+        try:
+            return query.get('q',[''])[0].decode('utf8')
+        except UnicodeDecodeError:
+            return query.get('q',[''])[0].decode('raw_unicode_escape')
     return ''
 
 def get_country(ip):
@@ -125,7 +141,7 @@ def process():
     for line in reader:
         if last and line['time_local']<last:
             continue
-        date=parse(line['time_local'])
+        date=todate(line['time_local'])
         line['timestamp']=date
 
         line['tags']=[]
@@ -148,11 +164,11 @@ def process():
             line['tags'].append('unknown')
         # append Country
         line['country']=get_country(line['remote_addr'])
-        line['msec']=float(line['msec'])
-        line['request_time']=float(line['request_time'])
-        line['connection']=int(line['connection'])
-        line['body_bytes_sent']=int(line['body_bytes_sent'])
-        line['request_length']=int(line['request_length'])
+        line['msec']=float(line['msec']) if line['msec'] else ''
+        line['request_time']=float(line['request_time']) if line['request_time'] else ''
+        line['connection']=int(line['connection']) if line['connection'] else ''
+        line['body_bytes_sent']=int(line['body_bytes_sent']) if line['body_bytes_sent'] else ''
+        line['request_length']=int(line['request_length']) if line['request_length'] else ''
         line['year']=date.year
         line['month']=date.month
         line['day']=date.day
@@ -173,7 +189,8 @@ def process():
     print '\ntotal new', i
 
 if __name__ == "__main__":
-    db=pymongo.Connection().pywik
+    #db=pymongo.Connection().pywik
+    db=pymongo.Connection().ncsatest
     db.__getitem__(sys.argv[1]).ensure_index([('connection', 1)])
     db.__getitem__(sys.argv[1]).ensure_index([('tags', 1)])
     db.__getitem__(sys.argv[1]).ensure_index([('status', 1)])
