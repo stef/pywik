@@ -44,6 +44,8 @@ Welcome to pywik the static webserver csv logfile analyzer.
     Any path that is uninteresting for tracking pageviews, like all
     requisites for pages (e.g. .css, .js, etc files), each line is a
     regexp.
+*** rss
+    Each line is a regexp for an rss/atom feed.
 *** classes
     This file allows you to categorise the entries. The format is the
     following: Each class starts with its name, then pairwise
