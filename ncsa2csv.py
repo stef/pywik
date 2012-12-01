@@ -3,6 +3,11 @@
 
 import fileinput, csv, sys, cStringIO, codecs, apachelog
 
+# missing fields in NCSA format, provided by CSV format
+# "connection","https","http_host",
+# "request_length","request_time",
+# "http_x_forwarded_for","msec",
+
 class UnicodeWriter:
     """
     A CSV writer which will write rows to CSV file "f",
@@ -46,16 +51,13 @@ csv.register_dialect('nginx',
 writer = UnicodeWriter(sys.stdout, dialect='nginx')
 
 class nginxparser(apachelog.parser):
-    # "connection","https","http_host",
-    # "request_length","body_bytes_sent","request_time",
-    # "http_referer","remote_user","http_user_agent","http_x_forwarded_for","msec",
     def alias(self, name):
         if name=='%>s':
             return 'status'
         if name=='%h':
             return 'remote_addr'
         if name=='%b':
-            return 'request_length'
+            return "body_bytes_sent",
         if name=='%t':
             return 'time_local'
         if name=='%u':
@@ -77,5 +79,4 @@ if __name__ == "__main__":
             sys.stderr.write("Unable to parse %s" % line)
             continue
         res['time_local']=res['time_local'][1:-1]
-        #print res
         writer.writerow((str(res.get(k,'')).encode('utf-8') for k in headers))
