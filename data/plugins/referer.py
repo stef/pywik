@@ -50,6 +50,6 @@ def process(line):
     else:
         line['http_referer']=tmp
     # extref?
-    if not textfilterre(line['http_referer'], patterns=ownhosts):
+    if line['http_referer'] not in ['', '-'] and not textfilterre(line['http_referer'], patterns=ownhosts):
         line['tags'].append('extref')
     return line
