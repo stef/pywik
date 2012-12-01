@@ -160,10 +160,10 @@ def process():
             line['tags'].append('https')
         line['status']=int(line['status'])
 
-        if line['status']=='404':
+        if line['status']==404:
             if not textfilterre(line['path'],ignoremissing):
                 line['tags'].append('notfound')
-            if not line['ispage'] and not textfilterre(line['path'],ignorepaths):
+            if not 'page' in line['tags'] and not textfilterre(line['path'],ignorepaths):
                 line['tags'].append('unknown')
 
         handle(line, filters)
