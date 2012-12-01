@@ -136,7 +136,7 @@ Welcome to pywik the static webserver csv logfile analyzer.
     - Where 'title' is the title to be displayed,
     - the second elem is a dict containing a mongodb filter expression,
     - the final elem is a list of fieldnames to be returned by mongo
-      for each mathing elements
+      for each matching elements
 
     This can be as simple as:
 
